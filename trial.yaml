@@ -1,0 +1,23 @@
+---
+- name: Verify Stage Autoscaling Group
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Find instances in the Stage Autoscaling Group using tags
+      community.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "DockerHost"
+          "tag:Environment": "stage"
+          "tag:Role": "docker-host"
+          "tag:Project": "JenkinsVault"
+      register: stage_instances
+
+    - name: Fail if no Stage instances are found
+      ansible.builtin.fail:
+        msg: "No instances found with the correct tags. The stage ASG has not been provisioned correctly."
+      when: stage_instances.instances | length == 0
+
+    - name: Report success for Stage ASG
+      ansible.builtin.debug:
+        msg: "Successfully found {{ stage_instances.instances | length }} instance(s) with the correct tags."

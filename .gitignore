@@ -1,0 +1,4 @@
+.terraform/
+jenkins-vault/.terraform/
+vault-init-config/.terraform/
+module/.terraform/

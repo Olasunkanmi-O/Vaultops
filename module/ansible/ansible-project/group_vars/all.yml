@@ -1,0 +1,22 @@
+# ansible/group_vars/all.yml
+---
+# Variables that apply to all hosts in all environments
+
+# Ansible user for SSH (though we use SSM, Ansible might still reference this)
+ansible_user: ubuntu
+
+# HashiCorp Vault configuration (Ansible server needs network access and IAM role for Vault)
+# These are the Vault address and a method to get a token.
+# For EC2 authentication, the Ansible server's IAM role would be configured in Vault to get a token.
+# For a production setup, avoid hardcoding vault_token here; use EC2 auth method + 'auth_method' in lookup.
+vault_addr: "https://vault.alasoasiko.co.uk:8200" # !! IMPORTANT: Replace with your actual Vault address !!
+# In a robust production setup, you would typically use Vault's EC2 authentication method
+# for the Ansible server to retrieve a short-lived token, rather than defining one here.
+# For demo/initial setup, if you have a static token, you might use it here.
+
+
+# Nexus Docker Registry URL - used by all environments
+nexus_docker_registry_url: "nexus.alasoasiko.co.uk:8085" # !! IMPORTANT: Replace with your actual Nexus domain and port !!
+
+# Common application name
+application_name: "petclinicapps"

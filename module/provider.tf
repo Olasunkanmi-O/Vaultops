@@ -1,6 +1,6 @@
 provider "aws" {
   region  = var.region
-  profile = "ola-devops"
+  #profile = "ola-devops"
 }
 
 terraform {
@@ -10,6 +10,6 @@ terraform {
     key          = "infrastructure/terraform.tfstate"
     region       = "us-east-2"
     encrypt      = true
-    profile      = "ola-devops"
+    #profile      = "ola-devops"
   }
 }

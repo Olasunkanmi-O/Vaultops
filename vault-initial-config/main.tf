@@ -2,6 +2,11 @@ resource "vault_auth_backend" "approle" {
   type        = "approle"
   path        = "approle"
   description = "AppRole auth method"
+
+  lifecycle {
+    prevent_destroy = false
+    ignore_changes  = all
+  }
 }
 
 resource "vault_mount" "kv_secret" {
@@ -9,6 +14,11 @@ resource "vault_mount" "kv_secret" {
   type        = "kv"
   options     = { version = "2" }
   description = "Key-Value secret engine v2"
+
+  lifecycle {
+    prevent_destroy = false
+    ignore_changes  = all
+  }
 }
 
 resource "vault_kv_secret_v2" "sonarqube_db" {

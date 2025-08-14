@@ -103,11 +103,12 @@ pipeline {
                 script {
                     env.SONARQUBE_ROLE_ID = sh(script: 'cd vault-initial-config && terraform output -raw sonarqube_role_id', returnStdout: true).trim()
                     env.SONARQUBE_SECRET_ID = sh(script: 'cd vault-initial-config && terraform output -raw sonarqube_secret_id', returnStdout: true).trim()
-                    env.VAULT_SERVER_PRIVATE_IP = sh(script: 'cd vault-initial-config && terraform output -raw vault_server_private_ip', returnStdout: true).trim()
+                    //env.VAULT_SERVER_PRIVATE_IP = sh(script: 'cd vault-initial-config && terraform output -raw vault_server_private_ip', returnStdout: true).trim()
                 }
                 withCredentials([
                     string(credentialsId: 'db-admin-username', variable: 'DB_ADMIN_USERNAME'),
                     string(credentialsId: 'db-admin-password', variable: 'DB_ADMIN_PASSWORD'),
+                    string(credentialsId: 'vault_server_private_ip', variable: 'VAULT_SERVER_PRIVATE_IP')
                 ]) {
                     dir('module') {
                         sh """

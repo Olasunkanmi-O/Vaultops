@@ -1,23 +1,23 @@
 output "stage_role_id" {
   value       = vault_approle_auth_backend_role.app_stage.role_id
-  #sensitive   = true
+  sensitive   = true
 }
 
 output "prod_role_id" {
   value       = vault_approle_auth_backend_role.app_prod.role_id
-  #sensitive   = true
+  sensitive   = true
 }
 
 output "ansible_newrelic_secret_id" {
   value       = vault_approle_auth_backend_role_secret_id.ansible_newrelic_secret_id.id
   description = "Use this in Ansible for Vault AppRole auth"
-  #sensitive   = true
+  sensitive   = true
 }
 
 output "ansible_newrelic_role_id" {
   value       = vault_approle_auth_backend_role.ansible_newrelic.role_id
   description = "Use this in Ansible for Vault AppRole auth"
-  #sensitive   = true
+  sensitive   = true
 }
 
 output "sonarqube_role_id" {

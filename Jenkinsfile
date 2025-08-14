@@ -73,7 +73,7 @@ pipeline {
                     env.SONARQUBE_ROLE_ID = sh(script: 'cd vault-initial-config && terraform output -raw sonarqube_role_id', returnStdout: true).trim()
                     env.SONARQUBE_SECRET_ID = sh(script: 'cd vault-initial-config && terraform output -raw sonarqube_secret_id', returnStdout: true).trim()
                 }
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'YOUR-AWS-CREDENTIALS-ID']]) {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']]) {
                     withCredentials([
                         string(credentialsId: 'db-admin-username', variable: 'DB_ADMIN_USERNAME'),
                         string(credentialsId: 'db-admin-password', variable: 'DB_ADMIN_PASSWORD'),

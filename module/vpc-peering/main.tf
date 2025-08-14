@@ -6,7 +6,7 @@ data "terraform_remote_state" "vault" {
     key     = "jenkins-vault/terraform.tfstate"
     region  = "us-east-2"
     encrypt = true
-    profile = "ola-devops"
+    #profile = "ola-devops"
   }
 }
 

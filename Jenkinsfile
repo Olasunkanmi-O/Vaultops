@@ -106,8 +106,8 @@ pipeline {
                     //env.VAULT_SERVER_PRIVATE_IP = sh(script: 'cd vault-initial-config && terraform output -raw vault_server_private_ip', returnStdout: true).trim()
                 }
                 withCredentials([
-                    string(credentialsId: 'db-admin-username', variable: 'DB_ADMIN_USERNAME'),
-                    string(credentialsId: 'db-admin-password', variable: 'DB_ADMIN_PASSWORD'),
+                    string(credentialsId: 'db_admin_username', variable: 'DB_ADMIN_USERNAME'),
+                    string(credentialsId: 'db_admin_password', variable: 'DB_ADMIN_PASSWORD'),
                     string(credentialsId: 'vault_server_private_ip', variable: 'VAULT_SERVER_PRIVATE_IP')
                 ]) {
                     dir('module') {
@@ -131,13 +131,13 @@ pipeline {
             when { expression { params.action == 'destroy' } }
             steps {
                 withCredentials([
-                    string(credentialsId: 'db-static-username', variable: 'DB_STATIC_USERNAME'),
-                    string(credentialsId: 'db-static-password', variable: 'DB_STATIC_PASSWORD'),
-                    string(credentialsId: 'newrelic-api-key', variable: 'NEWRELIC_API_KEY'),
-                    string(credentialsId: 'newrelic-user-id', variable: 'NEWRELIC_USER_ID'),
-                    string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN'),
-                    string(credentialsId: 'sonarqube-db-username', variable: 'SONARQUBE_DB_USERNAME'),
-                    string(credentialsId: 'sonarqube-db-password', variable: 'SONARQUBE_DB_PASSWORD'),
+                    string(credentialsId: 'db_static_username', variable: 'DB_STATIC_USERNAME'),
+                    string(credentialsId: 'db_static_password', variable: 'DB_STATIC_PASSWORD'),
+                    string(credentialsId: 'newrelic_api_key', variable: 'NEWRELIC_API_KEY'),
+                    string(credentialsId: 'newrelic_user_id', variable: 'NEWRELIC_USER_ID'),
+                    string(credentialsId: 'vault_token', variable: 'VAULT_TOKEN'),
+                    string(credentialsId: 'sonarqube_db_username', variable: 'SONARQUBE_DB_USERNAME'),
+                    string(credentialsId: 'sonarqube_db_password', variable: 'SONARQUBE_DB_PASSWORD'),
                 ]) {
                     dir('vault-initial-config') {
                         sh """

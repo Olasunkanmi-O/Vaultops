@@ -75,8 +75,8 @@ pipeline {
                 }
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']]) {
                     withCredentials([
-                        string(credentialsId: 'db-admin-username', variable: 'DB_ADMIN_USERNAME'),
-                        string(credentialsId: 'db-admin-password', variable: 'DB_ADMIN_PASSWORD'),
+                        string(credentialsId: 'db_admin_username', variable: 'DB_ADMIN_USERNAME'),
+                        string(credentialsId: 'db_admin_password', variable: 'DB_ADMIN_PASSWORD'),
                         string(credentialsId: 'vault_server_private_ip', variable: 'VAULT_SERVER_PRIVATE_IP')
                     ]) {
                         dir('module') {

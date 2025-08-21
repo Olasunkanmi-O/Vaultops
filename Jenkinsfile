@@ -41,7 +41,7 @@ pipeline {
                     string(credentialsId: 'db_static_password', variable: 'DB_STATIC_PASSWORD'),
                     string(credentialsId: 'newrelic_api_key', variable: 'NEWRELIC_API_KEY'),
                     string(credentialsId: 'newrelic_user_id', variable: 'NEWRELIC_USER_ID'),
-                    string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN'),
+                    string(credentialsId: 'vault_token', variable: 'VAULT_TOKEN'),
                     string(credentialsId: 'sonarqube_db_username', variable: 'SONARQUBE_DB_USERNAME'),
                     string(credentialsId: 'sonarqube_db_password', variable: 'SONARQUBE_DB_PASSWORD'),
                 ]) {

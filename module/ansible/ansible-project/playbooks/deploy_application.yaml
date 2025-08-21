@@ -1,22 +1,21 @@
 # ansible/playbooks/deploy_application.yml
 ---
 - name: Deploy PetClinic Application
-  hosts: webservers # This group is defined in inventory/aws_ec2.yml
-  become: true # Use sudo to run commands as root on the target hosts
-  gather_facts: false # Speeds up execution; facts generally not needed for this playbook
+  hosts: tag_docker-host  # All EC2s tagged with Role=docker-host
+  become: true
+  gather_facts: false
 
-  # Define common variables used throughout the playbook.
-  # APP_VERSION will be passed as an extra variable from Jenkins.
   vars:
     application_name: "petclinicapps"
     application_port: 8080
     host_port: 8080
-    # nexus_docker_registry_url and vault_addr/vault_token are typically in group_vars/all.yml
+    # APP_VERSION will be passed from Jenkins
+    # nexus_docker_registry_url and vault_addr are defined in group_vars/all.yml
 
   tasks:
-    - name: Ensure Docker is installed and running
+    - name: Ensure Docker is installed
       ansible.builtin.package:
-        name: docker-ce # For AlmaLinux/RHEL/CentOS; use 'docker.io' for Ubuntu/Debian
+        name: docker-ce
         state: present
 
     - name: Start and enable Docker service
@@ -36,21 +35,21 @@
         registry_url: "{{ nexus_docker_registry_url }}"
         username: "{{ lookup('community.hashi_vault.vault_read', 'secret=secret/data/nexus/docker/credentials:username', vault_addr=vault_addr) }}"
         password: "{{ lookup('community.hashi_vault.vault_read', 'secret=secret/data/nexus/docker/credentials:password', vault_addr=vault_addr) }}"
-      no_log: true # Good practice to prevent sensitive data in logs
+      no_log: true
 
-    - name: Pull the desired Docker image from Nexus
+    - name: Pull the Docker image from Nexus
       community.docker.docker_image:
         name: "{{ nexus_docker_registry_url }}/{{ application_name }}"
-        tag: "{{ APP_VERSION }}" # APP_VERSION passed from Jenkins
+        tag: "{{ APP_VERSION }}"
         source: pull
       register: image_pull_result
 
-    - name: Check if application container is already running
+    - name: Check if container is already running
       community.docker.docker_container_info:
         name: "{{ application_name }}-container"
       register: container_info_result
 
-    - name: Stop and remove old container if a new image was pulled or existing container is outdated/misconfigured
+    - name: Stop old container if outdated
       community.docker.docker_container:
         name: "{{ application_name }}-container"
         state: absent
@@ -60,7 +59,7 @@
           (container_info_result.containers | default([]) | length > 0 and
            container_info_result.containers[0].Image != (nexus_docker_registry_url + '/' + application_name + ':' + APP_VERSION))
 
-    - name: Create and start the new application container
+    - name: Start new application container
       community.docker.docker_container:
         name: "{{ application_name }}-container"
         image: "{{ nexus_docker_registry_url }}/{{ application_name }}:{{ APP_VERSION }}"
@@ -70,13 +69,9 @@
           - "{{ host_port }}:{{ application_port }}"
         restart_policy: unless-stopped
         env:
-          # Environment variables for your application, fetched from Vault
           DB_HOST: "{{ db_host }}"
           DB_PORT: "{{ db_port }}"
           DB_USERNAME: "{{ lookup('community.hashi_vault.vault_read', 'secret=secret/data/petclinic/database/credentials:username', vault_addr=vault_addr) }}"
           DB_PASSWORD: "{{ lookup('community.hashi_vault.vault_read', 'secret=secret/data/petclinic/database/credentials:password', vault_addr=vault_addr) }}"
 
-  # handlers: # If you need a simple handler, you could add this section directly here.
-  #   - name: Example Handler
-  #     debug:
-  #       msg: "A handler was notified!"
+  # Optional handlers can be defined here if needed

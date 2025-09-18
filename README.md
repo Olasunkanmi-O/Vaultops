@@ -6,6 +6,11 @@ It provisions a secure Terraform backend (S3), uploads Ansible playbooks, and de
 and Vault infrastructure. Subsequent phases use a Jenkins pipeline to manage Terraform deployments, 
 Vault setup, and module rollouts.
 
+## Architecture Diagram  
+
+![Infrastructure Diagram](./vaultops.drawio.png)
+
+
 ## Project Phases
 - **Phase 1**: Environment setup script (S3 backend, Ansible upload, Jenkins/Vault VPC provisioning)  
 - **Phase 2**: Jenkins CI/CD pipeline for Vault init and module deployments  

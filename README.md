@@ -1,463 +1,176 @@
-Project Documentation: Jenkins-Vault on AWS
-1. Project Overview
-This project establishes a secure, scalable Continuous Integration/Continuous Delivery (CI/CD) environment using Jenkins and a centralized secrets management solution with HashiCorp Vault, both deployed within a dedicated Amazon Web Services (AWS) Virtual Private Cloud (VPC).
 
-The setup ensures:
+# Automated Multi-Phase Infrastructure with Terraform, Jenkins, and Vault on AWS
 
-Secure Networking: Instances are primarily in private subnets, accessing the internet via a NAT Gateway.
+This project demonstrates an end-to-end Infrastructure as Code workflow on AWS. 
+It provisions a secure Terraform backend (S3), uploads Ansible playbooks, and deploys Jenkins 
+and Vault infrastructure. Subsequent phases use a Jenkins pipeline to manage Terraform deployments, 
+Vault setup, and module rollouts.
 
-Automated Provisioning: Infrastructure is defined and deployed using Terraform.
+## Project Phases
+- **Phase 1**: Environment setup script (S3 backend, Ansible upload, Jenkins/Vault VPC provisioning)  
+- **Phase 2**: Jenkins CI/CD pipeline for Vault init and module deployments  
+- **Phase 3**: Module deployments and teardown automation
 
-Secrets Management: Vault securely stores and manages sensitive data.
 
-CI/CD Integration: Jenkins retrieves secrets from Vault for its build and deployment processes using AppRole authentication.
+##  Phase 1: Environment Setup Script
 
-2. AWS Infrastructure Provisioning (Terraform)
-All AWS resources are provisioned using Terraform, ensuring infrastructure as code, reproducibility, and version control.
+This script is the **initial setup phase** of the project. Its primary function is to prepare the **AWS environment** for subsequent Terraform deployments by creating a secure S3 backend for state locking, configuring the S3 bucket's policies, uploading initial Ansible code, and finally provisioning the foundational **Jenkins and Vault VPC infrastructure** using Terraform.
 
-2.1. VPC and Networking
-A dedicated VPC is created with public and private subnets across a single Availability Zone (us-east-1a). This setup provides controlled internet access for private resources.
+***
 
-VPC CIDR: 12.0.0.0/16
+### Script Configuration and Prerequisites
 
-Public Subnet CIDR: 12.0.1.0/24 (for NAT Gateway, ELBs)
+#### Prerequisites
 
-Private Subnet CIDR: 12.0.2.0/24 (for Jenkins and Vault EC2 instances)
+1.  **AWS CLI:** Must be installed and configured.
+2.  **AWS Profile:** The profile defined by the `AWS_PROFILE` variable must exist locally and have permissions for S3, IAM, EC2, and other resources required by the Terraform configuration.
+3.  **Local Ansible Project:** The directory specified by `LOCAL_ANSIBLE_PROJECT_DIR` (`./module/ansible/ansible-project`) must exist and contain the initial Ansible code.
+4.  **Terraform Infrastructure Code:** The `jenkins-vault` directory must contain the Terraform code for provisioning the initial VPC, Jenkins, and Vault instances.
 
-Internet Gateway (IGW): Provides internet connectivity for the VPC.
+#### Variables
 
-NAT Gateway (NAT GW): Deployed in the public subnet to allow instances in private subnets outbound internet access.
+The script is configured via the following internal variables:
 
-Route Tables: Configured to direct traffic appropriately (public subnets to IGW, private subnets to NAT GW).
+| Variable | Value | Purpose |
+| :--- | :--- | :--- |
+| `BUCKET_NAME` | `pet-bucket-new` | **Remote Backend:** The name of the S3 bucket for Terraform state and Ansible code storage. |
+| `AWS_REGION` | `us-east-2` | **Region:** The AWS region where all resources will be created. |
+| `AWS_PROFILE` | `ola-devops` | **Authentication:** The local AWS CLI profile used for credentials. |
+| `INFRA_TERRAFORM_DIR` | `jenkins-vault` | The local directory containing the Phase 1 Terraform code. |
+| `LOCAL_ANSIBLE_PROJECT_DIR` | `./module/ansible/ansible-project` | **Source:** Local path to the initial Ansible project folder. |
+| `S3_ANSIBLE_PREFIX` | `ansible-code/latest/` | **Destination:** The S3 prefix (folder path) where Ansible code will be stored. |
 
-DNS: DNS hostnames and support are enabled for the VPC.
+***
 
-Terraform Configuration (vpc.tf or similar):
+### Script Execution Flow
 
-Terraform
+The script follows a sequential, failure-safe execution model (`set -e`):
 
-module "vpc" {
-  source = "terraform-aws-modules/vpc/aws"
+#### 1. S3 Backend Setup
 
-  name = "jenkins-vault-vpc"
-  cidr = "12.0.0.0/16"
+This section ensures a secure and reliable remote backend for Terraform state management is in place.
 
-  azs             = ["us-east-1a"]
-  public_subnets  = ["12.0.1.0/24"]
-  private_subnets = ["12.0.2.0/24"]
+| Step | Action | Description |
+| :--- | :--- | :--- |
+| **Check & Create Bucket** | `aws s3api head-bucket` / `create-bucket` | Checks for the existence of **`pet-bucket-new`**. If it doesn't exist, it creates it in `us-east-2`, correctly setting the `LocationConstraint`. |
+| **Enable Versioning** | `aws s3api put-bucket-versioning` | Enables **S3 Versioning** on the bucket. This is critical for protecting the Terraform state file against accidental deletion or corruption. |
+| **Enable Encryption** | `aws s3api put-bucket-encryption` | Enforces **AES256 Server-Side Encryption (SSE-S3)** as the default encryption for all objects uploaded to the bucket, ensuring data at rest is secure. |
 
-  enable_nat_gateway      = true
-  single_nat_gateway      = true
-  enable_dns_hostnames    = true
-  enable_dns_support      = true
+#### 2. Initial Ansible Code Upload
 
-  tags = {
-    Terraform = "true"
-    Project   = "JenkinsVault"
-  }
-}
-2.2. Jenkins Server Deployment
-The Jenkins server is deployed as an EC2 instance within the private subnet, fronted by a Classic Load Balancer (ELB) for secure external access.
+The latest Ansible project code is synced to the S3 bucket, making it available for the deployed instances (Jenkins, Vault, etc.) to fetch and execute.
 
-EC2 Instance:
+| Step | Action | Description |
+| :--- | :--- | :--- |
+| **Directory Check** | `if [ ! -d ... ]` | Performs a critical check to ensure the local source directory for Ansible exists before attempting the sync. |
+| **S3 Sync** | `aws s3 sync` | Recursively copies the contents of **`./module/ansible/ansible-project`** to the S3 path **`s3://pet-bucket-new/ansible-code/latest/`**. |
 
-AMI: Latest Ubuntu Jammy 22.04 LTS.
+#### 3. Terraform Infrastructure Deployment
 
-Instance Type: t3.medium.
+This is the final step, which deploys the base environment where the subsequent phases will run.
 
-Subnet: module.vpc.private_subnets[0] (private subnet in us-east-1a).
+| Step | Action | Location |
+| :--- | :--- | :--- |
+| **Change Directory** | `cd "$INFRA_TERRAFORM_DIR"` | Moves into the **`jenkins-vault`** directory containing the infrastructure code. |
+| **Terraform Init** | `terraform init` | Initializes the working directory, downloading providers and configuring the remote backend (S3 bucket created in step 1). |
+| **Terraform Apply** | `terraform apply -auto-approve` | Provisions the core infrastructure, which includes the separate VPCs for **Jenkins** and **Vault**. The `-auto-approve` flag prevents a manual confirmation prompt. |
+| **Error Handling** | `if ! terraform apply...` | Includes an explicit check to stop the script and notify the user if the infrastructure deployment fails. |
 
-User Data: A shell script (jenkins_userdata.sh) to install Jenkins, Java, Docker, Docker Compose, and configure necessary services.
+## Phase 2 execution using jenkins
 
-Root Volume: 20GB gp3 encrypted.
+This phase describes the continuous integration and continuous deployment (CI/CD) pipeline for provisioning and managing the remaining infrastructure using **Terraform**. The pipeline supports both **deployment** (`apply`) and **teardown** (`destroy`) of the infrastructure in a controlled, multi-phase manner, however, before you execute this phase make sure to read the [vault setup](./vault_setup.md), it will guide you on the manual setup of the vault.
 
-Security Group (jenkins_sg):
+***
 
-Ingress: Allows TCP port 8080 only from the Jenkins ELB's security group.
+### Pipeline Overview
 
-Egress: Allows all outbound traffic (0.0.0.0/0) for updates and internet access.
+| Feature | Description |
+| :--- | :--- |
+| **Type** | Declarative Jenkins Pipeline |
+| **Tooling** | **Terraform** (for IaC), **Git** (for SCM) |
+| **Target Infrastructure** | Vault server setup and configuration, along with module deployments (likely on AWS, given the credentials). |
+| **Execution Path** | Controlled by the user-selected `action` parameter (`apply` or `destroy`). |
+| **Notifications** | Sends job status to a dedicated **Slack** channel. |
 
-IAM Role & Instance Profile (jenkins_ssm_role):
+***
 
-Allows the Jenkins EC2 instance to assume an EC2 service role.
+### Pipeline Configuration & Prerequisites
 
-Attached policies: AmazonSSMManagedInstanceCore (for Session Manager access) and AdministratorAccess (for broad permissions during initial setup/testing, should be scoped down for production).
+#### Agent and Tools
 
-Classic Load Balancer (elb_jenkins):
+The pipeline is configured to run on **any available agent** and requires the following tool to be pre-configured in Jenkins:
 
-Subnets: module.vpc.public_subnets (public subnet for external accessibility).
+* **Terraform:** Must be available on the execution agent and aliased as `'terraform'`.
 
-Listener:
+#### User Parameters
 
-Frontend: HTTPS:443
+The pipeline must be triggered manually, requiring the user to select one of the following actions:
 
-Backend: HTTP:8080 (to Jenkins instance)
+| Parameter Name | Choices | Description |
+| :--- | :--- | :--- |
+| **`action`** | `apply`, `destroy` | Selects whether to provision the infrastructure (`apply`) or tear it down (`destroy`). |
 
-SSL Certificate: Managed by AWS Certificate Manager (ACM).
+#### Environment Variables
 
-Health Check: TCP:8080.
+The following variables are configured globally for the pipeline:
 
-ACM Certificate: For *.${var.domain_name} and ${var.domain_name}. Validated via Route 53 DNS records.
+| Variable | Value | Description |
+| :--- | :--- | :--- |
+| `SLACKCHANNEL` | `vaultops` | The Slack channel for pipeline notifications. |
+| `DOMAIN_NAME` | `alasoasiko.co.uk` | The base domain name used for resource configuration. |
+| `VAULT_ADDRESS` | `https://vault.alasoasiko.co.uk` | The address for the HashiCorp Vault server. |
 
-Route 53 DNS Record: An A record for jenkins.${var.domain_name} pointing to the Jenkins ELB.
+#### Credentials Used
 
-Key Terraform Snippets (for jenkins.tf or similar):
+Multiple Jenkins **Secret Text** credentials and one **AWS Credentials** credential are required to execute the pipeline securely. Credentials are automatically injected as environment variables within their respective stages.
 
-Terraform
+| Credentials ID | Usage |
+| :--- | :--- |
+| `github-cred` | Used for checking out the source code from the Git repository. |
+| `aws-cred` | Used for authenticating with **AWS** in the module deployment stage. |
+| `vault_token` | Token for authenticating to the **Vault** server. |
+|  `db_static_username`, `db_static_password` | master username and password for the database |
+| `newrelic_api_key`, `newrelic_user_id`| newrelic credentials, id and api-key|
+| `sonarqube_db_username`, `sonarqube_db_password` | Sonarqube credentials | 
+| `vault_server_private_ip` | Private IP of the Vault server. |
 
-# Jenkins EC2 Instance
-resource "aws_instance" "jenkins-server" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t3.medium"
-  subnet_id                   = module.vpc.private_subnets[0]
-  availability_zone           = module.vpc.azs[0]
-  vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
-  iam_instance_profile        = aws_iam_instance_profile.jenkins_instance_profile.name
-  user_data                   = file("${path.module}/jenkins_userdata.sh")
-  root_block_device { volume_size = 20; volume_type = "gp3"; encrypted = true }
-  metadata_options { http_tokens = "required" }
-  tags = { Name = "jenkins-server" }
-}
+***
 
-# jenkins_userdata.sh (excerpt - detailed script contents separate)
-# Example:
-#!/bin/bash
-sudo apt update -y
-sudo apt install -y openjdk-17-jre
-curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
-  /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
-  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
-  /etc/apt/sources.list.d/jenkins.list > /dev/null
-sudo apt update -y
-sudo apt install -y jenkins
-# ... install docker, docker-compose, configure permissions
-sudo usermod -aG docker jenkins
-sudo systemctl start jenkins
-sudo systemctl enable jenkins
-2.3. Vault Server Deployment
-The Vault server is deployed as an EC2 instance in the private subnet, using AWS KMS for auto-unseal and S3 for storage. It's fronted by a Classic Load Balancer (ELB).
+### Pipeline Stages
 
-EC2 Instance:
+The pipeline defines distinct stages for applying and destroying infrastructure, ensuring a proper, dependency-aware execution order.
 
-AMI: Latest Ubuntu Jammy 22.04 LTS.
+#### 1. Checkout
 
-Instance Type: t3.medium.
+**Action:** Clones the project repository.
+**Details:** Checks out the `*/main` branch from `https://github.com/your-org/your-repo.git` using the `github-cred` Jenkins credential.
 
-Subnet: module.vpc.private_subnets[0] (private subnet in us-east-1a).
+#### 2. Phase 2 - Vault Init Config Apply (Conditional: `action == 'apply'`)
 
-User Data: A shell script (vault_userdata.sh) to install Vault, configure its HCL, set up systemd service, and perform auto-unseal.
+**Action:** Applies the initial Vault configuration.
+**Location:** Executes Terraform commands in the **`vault-initial-config`** directory.
 
-Root Volume: 20GB gp3 encrypted.
 
-Security Group (vault_server_sg):
+#### 3. Phase 3 - Module Deployment (Conditional: `action == 'apply'`)
 
-Ingress: Allows TCP port 8200 from the Jenkins instance's security group (for integration) and from the Vault ELB's security group.
+**Action:** Deploys subsequent infrastructure modules, dependent on Phase 2 outputs.
+**Location:** Executes Terraform commands in the **`module`** directory.
 
-Egress: Allows all outbound traffic (0.0.0.0/0).
+#### 4. Destroy - Phase 3 Modules (Conditional: `action == 'destroy'`)
 
-IAM Role & Instance Profile (vault_server_role):
+**Action:** **Teardown** of the Phase 3 (Module Deployment) infrastructure.
+**Details:** Executes the same credential and output retrieval steps as the `apply` path, but runs `terraform destroy` in the **`module`** directory, ensuring dependent resources are removed first.
 
-Allows the Vault EC2 instance to assume an EC2 service role.
+#### 5. Destroy - Phase 2 - Vault Init Config Infrastructure (Conditional: `action == 'destroy'`)
 
-Attached policies: AmazonSSMManagedInstanceCore, permissions for KMS (kms:Encrypt, kms:Decrypt, kms:DescribeKey) and S3 (s3:PutObject, s3:GetObject, s3:DeleteObject, s3:ListBucket) for auto-unseal and storage backend.
+**Action:** **Teardown** of the Phase 2 (Initial Vault Config) infrastructure.
+**Details:** Executes the same credential binding steps as the `apply` path, but runs `terraform destroy` in the **`vault-initial-config`** directory, which must be executed *after* Phase 3 is destroyed.
 
-KMS Key: Used for Vault's auto-unseal functionality (alias/vault-auto-unseal-key).
+***
 
-S3 Bucket: Used as Vault's storage backend (${var.vault_storage}).
+### Post-Build Actions (Notifications)
 
-Classic Load Balancer (elb_vault):
+Upon completion, the pipeline sends a notification to the configured **`vaultops`** Slack channel:
 
-Subnets: module.vpc.public_subnets (public subnet).
-
-Listener:
-
-Frontend: HTTP:8200
-
-Backend: HTTP:8200 (to Vault instance)
-
-Note: TLS is disabled on the Vault instance for initial setup (tls_disable = "true"). For production, TLS should be enabled and configured on the ELB and ideally on the Vault server itself.
-
-Health Check: TCP:8200.
-
-Route 53 DNS Record: An A record for vault.${var.domain_name} pointing to the Vault ELB.
-
-Key Terraform Snippets (for vault.tf or similar):
-
-Terraform
-
-# Vault EC2 Instance
-resource "aws_instance" "vault_server" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t3.medium"
-  subnet_id                   = module.vpc.private_subnets[0]
-  availability_zone           = module.vpc.azs[0]
-  vpc_security_group_ids      = [aws_security_group.vault_server_sg.id]
-  iam_instance_profile        = aws_iam_instance_profile.vault_server_profile.name
-  associate_public_ip_address = false # Private instance
-  user_data                   = file("${path.module}/vault_userdata.sh")
-  tags = { Name = "vault-server" }
-}
-
-# vault_userdata.sh (excerpt - detailed script contents separate)
-# Example:
-#!/bin/bash
-sudo apt update -y
-sudo apt install -y gnupg software-properties-common curl
-# ... Install Vault binary ...
-sudo mkdir -p /etc/vault.d
-cat << EOF | sudo tee /etc/vault.d/vault.hcl
-storage "s3" {
-  bucket = "${var.vault_storage}"
-  region = "${var.region}"
-}
-
-listener "tcp" {
-  address     = "0.0.0.0:8200"
-  tls_disable = "true" # !! IMPORTANT: CHANGE FOR PRODUCTION !!
-}
-
-seal "awskms" {
-  kms_key_id     = "${aws_kms_alias.vault_unseal_key_alias.target_key_arn}"
-  kms_encryption_context = {
-    "VaultCluster" = "jenkins-vault"
-  }
-}
-
-ui = true
-EOF
-# ... systemd service setup, start/enable Vault
-3. Vault Server Initial Setup & Configuration
-After the Vault EC2 instance is running, manual steps are required for initial setup and subsequent configuration for Jenkins integration. All commands are run from the Vault EC2 instance via AWS SSM Session Manager.
-
-Prerequisites:
-
-Connect to Vault EC2 instance: aws ssm start-session --target <Vault-EC2-Instance-ID>
-
-Set Vault Address (critical as TLS is disabled): export VAULT_ADDR='http://127.0.0.1:8200'
-
-3.1. Initialization & Unseal
-Upon first startup, Vault is sealed. It automatically unseals using AWS KMS due to the seal "awskms" configuration.
-
-Manual Initialization (first time only):
-
-Bash
-
-vault operator init
-CRITICAL: This command outputs the Root Token and Recovery Keys. Save these securely in an offline location. These are essential for initial access and disaster recovery.
-
-3.2. Enable KV Secrets Engine (Version 2)
-By default, the secret/ path for Key-Value secrets is not enabled. We explicitly enable KV Version 2, which vault kv put/get commands operate on.
-
-Bash
-
-vault secrets enable -path=secret -version=2 kv
-Expected Output: Success! Enabled the kv secrets engine at: secret/
-
-3.3. AppRole Authentication Setup for Jenkins
-AppRole is used for machine-to-machine authentication between Jenkins and Vault.
-
-Log in to Vault (as root or a user with sudo policy on sys/auth and sys/policy):
-
-Bash
-
-vault login <your_initial_root_token_here>
-Verify login: vault token lookup (should show policies ["root"])
-
-Enable AppRole Authentication Method:
-
-Bash
-
-vault auth enable approle
-Expected: Success! Enabled approle auth method at: approle/
-
-Create Vault Policy for Jenkins (jenkins-policy.hcl):
-This policy grants Jenkins read/list access to secrets under secret/data/jenkins/.
-
-Bash
-
-cat << EOF > jenkins-policy.hcl
-path "secret/data/jenkins/*" {
-  capabilities = ["read", "list"]
-}
-path "secret/metadata/jenkins/*" {
-  capabilities = ["read", "list"]
-}
-path "auth/approle/login" {
-  capabilities = ["create", "read"]
-}
-EOF
-Bash
-
-vault policy write jenkins-policy jenkins-policy.hcl
-Expected: Success! Uploaded policy: jenkins-policy
-
-Create AppRole for Jenkins (jenkins-approle):
-
-Bash
-
-vault write auth/approle/role/jenkins-approle token_ttl=1h token_max_ttl=4h policies="jenkins-policy"
-Get AppRole Role ID:
-
-Bash
-
-vault read auth/approle/role/jenkins-approle/role-id
-SAVE THIS role_id SECURELY!
-
-Generate AppRole Secret ID:
-
-Bash
-
-vault write -f auth/approle/role/jenkins-approle/secret-id
-SAVE THIS secret_id SECURELY! Treat it like a password.
-
-3.4. Storing a Test Secret
-A simple test secret is stored in Vault at secret/jenkins/my-test-secret for Jenkins to retrieve.
-
-Bash
-
-vault kv put secret/jenkins/my-test-secret message="HelloFromVault!"
-Expected: Success! Data written to: secret/jenkins/my-test-secret
-
-Verify (get only the data): vault kv get -field=message secret/jenkins/my-test-secret (should output HelloFromVault!)
-
-4. Jenkins Server Configuration
-After the Jenkins EC2 instance is running and accessible via ELB, additional steps are required within the Jenkins UI to integrate with Vault.
-
-4.1. Initial Jenkins Setup (First Access)
-Access Jenkins UI: Navigate to https://jenkins.${var.domain_name}.
-
-Unlock Jenkins: Retrieve initial admin password from EC2 instance:
-
-Bash
-
-aws ssm start-session --target <Jenkins-EC2-Instance-ID>
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-Enter password in UI.
-
-Install Plugins: Choose "Install suggested plugins".
-
-Create Admin User: Create your first admin user credentials.
-
-4.2. Install HashiCorp Vault Plugin
-Log in to Jenkins.
-
-Go to Manage Jenkins > Plugins.
-
-Click "Available plugins" tab.
-
-Search for HashiCorp Vault, check the box, and click "Install without restart".
-
-Restart Jenkins if prompted.
-
-4.3. Configure Global Vault Plugin Settings
-This links Jenkins to your Vault server and defines how it authenticates.
-
-Log in to Jenkins.
-
-Go to Manage Jenkins > Credentials > System > Global credentials (unrestricted).
-
-Click Add Credentials.
-
-Kind: Secret text
-
-Secret: Your AppRole secret_id (from Vault).
-
-ID: vault-jenkins-approle-secret-id (arbitrary, used to reference this credential).
-
-Click Create.
-
-Go to Manage Jenkins > System.
-
-Scroll to "HashiCorp Vault Plugin" section.
-
-Click Add Vault Configuration.
-
-Vault URL: https://vault.${var.domain_name} (your Vault ELB URL).
-
-Vault Credential:
-
-Click Add button.
-
-Kind: Vault App Role Credential
-
-Role ID: Your AppRole role_id (from Vault).
-
-Secret ID: Select vault-jenkins-approle-secret-id from the dropdown.
-
-Path: approle
-
-ID: jenkins-vault-approle (arbitrary, identifies this specific AppRole configuration).
-
-Click Add.
-
-Select jenkins-vault-approle from the main Vault Credential dropdown.
-
-Skip SSL Verification: Check this box only for non-production environments if your Vault ELB does not have a trusted SSL certificate (as per current tls_disable=true).
-
-Click Test Connection (should show "Connected").
-
-Click Save at the bottom.
-
-5. Jenkins Pipeline for Secret Retrieval
-A Jenkins Pipeline job demonstrates how to fetch a secret from Vault using the withVault step provided by the plugin.
-
-Steps:
-
-Log in to Jenkins.
-
-Click New Item.
-
-Item name: Vault-Secret-Test.
-
-Type: Pipeline.
-
-Click OK.
-
-In the "Pipeline" section, set "Definition" to Pipeline script.
-
-Paste the following Groovy script:
-
-Groovy
-
-pipeline {
-    agent any
-
-    stages {
-        stage('Retrieve Secret from Vault') {
-            steps {
-                script {
-                    withVault(
-                        configuration: [
-                            vaultUrl: 'https://vault.alasoasiko.co.uk', // Your Vault ELB URL
-                            vaultCredentialId: 'jenkins-vault-approle', // The ID of the Vault AppRole Credential
-                            engineVersion: 2 // Specify KV Engine version 2
-                        ],
-                        vaultSecrets: [
-                            [
-                                path: 'secret/jenkins/my-test-secret', // Path to secret in Vault
-                                secretValues: [
-                                    [
-                                        vaultKey: 'message', // Key within the secret
-                                        envVar: 'MY_VAULT_MESSAGE' // Env var to set in Jenkins
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ) {
-                        sh 'echo "The secret message from Vault is: ${MY_VAULT_MESSAGE}"'
-                    }
-                }
-            }
-        }
-    }
-}
-Update vaultUrl with your actual Vault ELB URL.
-
-Ensure vaultCredentialId matches the ID you set (jenkins-vault-approle).
-
-Click Save.
-
-Run the job: Click "Build Now" and check the Console Output.
-
-Expected Result: The console output should display: The secret message from Vault is: HelloFromVault!
+* **Success:** Sends a 'good' (green) colored message with the job name, build number, and link.
+* **Failure:** Sends a 'danger' (red) colored message with the job name, build number, and link.
